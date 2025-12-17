@@ -13,6 +13,7 @@ import regex as re
 
 # local
 from bpe.train_bpe_optim import train_bpe
+from bpe.bpe_tokenizer_optim import BPE_Tokenizer
 
 
 def run_linear(
@@ -564,7 +565,8 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    # from bpe.demo import
+    return BPE_Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(

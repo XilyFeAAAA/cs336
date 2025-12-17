@@ -30,15 +30,6 @@ class LinkedList(Generic[T]):
             self.tail = node
         return node
 
-    def push_after(self, pre_node, value) -> LinkNode[T]:
-        node = LinkNode[T](value=value)
-        nxt_node = node.nxt
-        node.pre = pre_node
-        node.nxt = nxt_node
-        pre_node.nxt = node
-        nxt_node.pre = node
-        return node
-
     def delete_node(self, node) -> None:
         if node.pre:
             node.pre.nxt = node.nxt
@@ -48,3 +39,6 @@ class LinkedList(Generic[T]):
             node.nxt.pre = node.pre
         else:
             self.tail = node.pre
+
+        node.pre = None
+        node.nxt = None

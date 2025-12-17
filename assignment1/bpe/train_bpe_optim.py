@@ -64,8 +64,6 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
         heapq.heappush(heap, item)
     
     while heap and len(vocab) < vocab_size:
-        if 256 - len(vocab) == -8:
-            breakpoint()
         heapitem = heapq.heappop(heap)
         pair = heapitem.get_pair()
         
@@ -73,8 +71,6 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
         if pair not in pair_counts or pair_counts[pair] != heapitem.count:
             continue
 
-        # print(f"===={256-len(vocab)}轮====")
-        # print(f"处理的pair为{vocab[pair[0]]} {vocab[pair[1]]},出现次数为{heapitem.count}")
         merges.append((vocab[pair[0]], vocab[pair[1]]))
         new_token = len(vocab)
         vocab[new_token] = vocab[pair[0]] + vocab[pair[1]]
@@ -125,23 +121,9 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
     
     return vocab, merges
 
-def update_pair_count(pair: tuple[int, int], delta: int, pair_counts: dict, heap: list, vocab: dict):
-
-    pair_counts[pair] = pair_counts[pair] + delta
-
-    # 如果计数 <= 0，直接删除
-    if pair_counts[pair] <= 0:
-        pair_counts.pop(pair)
-        # 注意 back_link 中节点引用已经在 merge 时处理过，这里不用动
-        return
-
-    # push 到堆
-    cnt = pair_counts[pair]
-    heapq.heappush(heap, HeapItem(cnt, pair[0], pair[1], vocab))
-
 if __name__ == "__main__":#
-    # INPUT_PATH = r"D:\dev\github\cs336\test_corpus.txt"
-    INPUT_PATH = r"D:\dev\github\cs336\assignment1\tests\fixtures\corpus.en"
+    INPUT_PATH = r"D:\dev\github\cs336\test_corpus.txt"
+    # INPUT_PATH = r"D:\dev\github\cs336\assignment1\tests\fixtures\corpus.en"
     VOCAB_SIZE = 700
-    SPECIAL_TOKENS = []
+    SPECIAL_TOKENS = ["<|endoftext|>"]
     train_bpe(INPUT_PATH, VOCAB_SIZE, SPECIAL_TOKENS)

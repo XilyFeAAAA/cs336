@@ -1,11 +1,31 @@
-from collections import defaultdict
+from dataclasses import dataclass
 from typing import Iterable, Iterator
-from utils.linklist import LinkedList
+from utils.linklist import LinkedList, LinkNode
+from tests.common import gpt2_bytes_to_unicode
 import regex as re
+import heapq
 import json
 
 
-from tests.common import gpt2_bytes_to_unicode
+INF = float("inf")
+
+@dataclass
+class LinkItem:
+    vocab_id: int
+    alive: bool = True
+
+
+class HeapItem:
+    
+    def __init__(self, rank, node):
+        self.rank: int = rank
+        self.node: LinkNode = node
+    
+    def __lt__(self, other):
+        return self.rank < other.rank
+    
+    def __eq__(self, other):
+        return self.rank == other.rank
 
 
 class BPE_Tokenizer:
@@ -22,7 +42,7 @@ class BPE_Tokenizer:
         self.rev_vocab = {v:k for k,v in vocab.items()}
         self.PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         self.sp_union = "|".join(re.escape(t) for t in self.special_tokens)
-      
+        self.merges_rank = {merge: rank for rank, merge in enumerate(merges)}
     
     @classmethod
     def from_files(
@@ -63,62 +83,81 @@ class BPE_Tokenizer:
         ]
         
         return cls(vocab, merges, special_tokens)
-     
-     
+    
     def encode(self, text: str) -> list[int]:
         subwords = []
+        out = []
         if self.special_tokens:
             for subword in re.split(f"({self.sp_union})", text):
                 subwords.extend([subword] if subword in self.special_tokens else re.findall(self.PAT, subword))
         else:
             subwords = re.findall(self.PAT, text)
         
-        ids = []
         for subword in subwords:
             if subword in self.special_tokens:
-                ids.append(self.rev_vocab[subword.encode("utf-8")])
+                out.append(self.rev_vocab[subword.encode("utf-8")])
             else:
-                ids.extend(self.merge_bytes([self.rev_vocab[bytes([byte_id])] for byte_id in subword.encode("utf-8")]))
-        
-        return ids
+                out.extend(self.encode_non_special(subword))
+        return out
     
-    def merge_bytes(self, raw_vocab_ids: list[int]) -> list[int]:
-        merged_vocab_ids = []
-        # 构建双向链表
-        linkedlist = LinkedList[int]()
-        # 构建一个反向链接
-        back_link = defaultdict(list)
+    def encode_non_special(self, subword: str) -> list[int]:
+        heap = []
+        # 1. subword 变成 vocab-ids
+        raw_vocab_ids = [self.rev_vocab[bytes([byte_id])] for byte_id in subword.encode("utf-8")]
+        # 2. 用双向链表存文本
+        linkedlist = LinkedList[LinkItem]()
         for raw_vocab_id in raw_vocab_ids:
-            node = linkedlist.push_back(raw_vocab_id)
-            back_link[raw_vocab_id].append(node)
+            linkedlist.push_back(LinkItem(vocab_id=raw_vocab_id))
         
-        # 遍历merges
-        for merge in self.merges:
-            new_token = merge[0] + merge[1]
-            for node in list(back_link[self.rev_vocab[merge[0]]]):
-                # 假设有 a → b
-                a, b = node, node.nxt
-                if b is None or self.vocab[b.value] != merge[1]:
-                    continue
-                
-                # a → b 变成 c
-                a.value = self.rev_vocab[new_token]
-                linkedlist.delete_node(b)
-                
-                # 更新backlink
-                back_link[self.rev_vocab[merge[0]]].remove(a)
-                back_link[self.rev_vocab[merge[1]]].remove(b)
-                back_link[self.rev_vocab[new_token]].append(a)
-              
-        head = linkedlist.head  
-        while head is not None:
-            merged_vocab_ids.append(head.value)
-            head = head.nxt
+        # 小根堆，(rank, node)
+        node = linkedlist.head
+        while node is not None:
+            rank = self.get_rank(node)
+            if rank != INF:
+                item = HeapItem(rank, node)
+                heapq.heappush(heap, item)
+            node = node.nxt
         
-        return merged_vocab_ids
-             
+        
+        # x → a → b
+        while heap:
+            heap_item = heapq.heappop(heap)
+            a = heap_item.node
+            b = a.nxt
+                
+            if not a.value.alive or b is None or heap_item.rank != self.get_rank(heap_item.node):
+                continue
             
+            pair = (self.vocab[a.value.vocab_id], self.vocab[b.value.vocab_id])
+            new_token = pair[0] + pair[1]
+            new_vocab_id = self.rev_vocab[new_token]
+            
+            # new_token 替代 (a, b)
+            a.value = LinkItem(new_vocab_id)
+            b.alive = False
+            linkedlist.delete_node(b)
+            
+            
+            x = a.pre
+            if x is not None:
+                if (rank := self.get_rank(x)) != INF:
+                    heapq.heappush(heap, HeapItem(rank, x))
+            
+            if (rank := self.get_rank(a)) != INF:
+                heapq.heappush(heap, HeapItem(rank, a))
+            
+        out = []
+        node = linkedlist.head
+        while node is not None:
+            out.append(node.value.vocab_id)
+            node = node.nxt
+        return out
         
+    
+    def get_rank(self, node: LinkNode[LinkItem]) -> int:
+        if not node.value.alive or node.nxt is None:
+            return INF
+        return self.merges_rank.get((self.vocab[node.value.vocab_id], self.vocab[node.nxt.value.vocab_id]), INF)
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         for chunk in iterable:
@@ -136,24 +175,8 @@ if __name__ == "__main__":#
     SPECIAL_TOKENS = ["<|endoftext|>"]
     tokenizer = BPE_Tokenizer.from_files(VOCAB_PATH, MERGES_PATH, SPECIAL_TOKENS)
     test_string = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    # test_string = "hello world"
     encoded_ids = tokenizer.encode(test_string)
     tokenized_string = [tokenizer.decode([x]) for x in encoded_ids]
     # Ensure the special <|endoftext|> token is preserved
     assert tokenized_string.count("<|endoftext|>") == 3
-    
-    # test_vocab = {
-    #     0: b' ', 
-    #     1: b'a', 
-    #     2: b'c', 
-    #     3: b'e', 
-    #     4: b'h', 
-    #     5: b't', 
-    #     6: b'th', 
-    #     7: b' c', 
-    #     8: b' a', 
-    #     9: b'the', 
-    #     10: b' at'
-    # }
-    # test_merges = [(b't', b'h'), (b' ', b'c'), (b' ', b'a'), (b'th', b'e'), (b' a', b't')]
-    # bpe = BPE_Tokenizer(test_vocab, test_merges, [])
-    # print(bpe.encode("the cat ate"))
