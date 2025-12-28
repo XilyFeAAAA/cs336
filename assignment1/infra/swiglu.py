@@ -1,7 +1,8 @@
+from infra.silu import SiLU
+from infra.linear import Linear
 from typing import Optional
 from torch import nn
 import torch
-import math
 
 
 
@@ -20,23 +21,13 @@ class SwiGLU_FFN(nn.Module):
         self.d_ff = d_ff
         self.d_model = d_model
         
-        self.w1 = nn.Parameter(torch.rand((d_ff, d_model), **factory_kwargs))
-        self.w2 = nn.Parameter(torch.rand((d_model, d_ff), **factory_kwargs))
-        self.w3 = nn.Parameter(torch.rand((d_ff, d_model), **factory_kwargs))
-        
-        self.init_parameter()
-        
-    def init_parameter(self):
-        nn.init.normal_(self.w1, mean=0, std=math.sqrt(2/self.d_ff))
-        nn.init.normal_(self.w2, mean=0, std=math.sqrt(2/self.d_model))
-        nn.init.normal_(self.w3, mean=0, std=math.sqrt(2/self.d_ff))
-    
-    
-    def SiLU(self, x: torch.Tensor):
-        return x * torch.sigmoid(x)
+        self.w1 = Linear(d_model, d_ff, **factory_kwargs)
+        self.w2 = Linear(d_ff, d_model, **factory_kwargs)
+        self.w3 = Linear(d_model, d_ff, **factory_kwargs)
+        self.silu = SiLU()
     
     
     def forward(self, x: torch.Tensor):
-        return (self.SiLU(x @ self.w1.T) * (x @ self.w3.T)) @ self.w2.T
+        return self.w2(self.silu(self.w1(x)) * (self.w3(x)))
         
         
