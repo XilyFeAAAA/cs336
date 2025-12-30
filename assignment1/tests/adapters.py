@@ -8,11 +8,8 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
-from collections import defaultdict
-import regex as re
 
 # local
-from bpe.train_bpe_optim import train_bpe
 from bpe.bpe_tokenizer_optim import BPE_Tokenizer
 
 
@@ -489,7 +486,6 @@ def run_transformer_lm(
     return transformer(in_indices)
     
 
-
 def run_rmsnorm(
     d_model: int,
     eps: float,
@@ -554,7 +550,8 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    from infra.dataloader import get_batch
+    return get_batch(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -662,7 +659,8 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    from infra.checkpoint import save_checkpoint
+    save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -683,7 +681,8 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    from infra.checkpoint import load_checkpoint
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
@@ -737,4 +736,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
+    from bpe.train_bpe import train_bpe
     return train_bpe(input_path, vocab_size, special_tokens)

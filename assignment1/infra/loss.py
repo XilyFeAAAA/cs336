@@ -1,6 +1,5 @@
 from typing import Optional
 from infra.softmax import LogSoftmax
-import torch.nn as nn
 import torch
 
 
