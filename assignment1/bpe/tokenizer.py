@@ -1,31 +1,10 @@
-from dataclasses import dataclass
 from typing import Iterable, Iterator
-from utils.linklist import LinkedList, LinkNode
 from tests.common import gpt2_bytes_to_unicode
 import regex as re
-import heapq
 import json
 
 
 INF = float("inf")
-
-@dataclass
-class LinkItem:
-    vocab_id: int
-    alive: bool = True
-
-
-class HeapItem:
-    
-    def __init__(self, rank, node):
-        self.rank: int = rank
-        self.node: LinkNode = node
-    
-    def __lt__(self, other):
-        return self.rank < other.rank
-    
-    def __eq__(self, other):
-        return self.rank == other.rank
 
 
 class BPE_Tokenizer:
@@ -101,63 +80,32 @@ class BPE_Tokenizer:
         return out
     
     def encode_non_special(self, subword: str) -> list[int]:
-        heap = []
-        # 1. subword 变成 vocab-ids
-        raw_vocab_ids = [self.rev_vocab[bytes([byte_id])] for byte_id in subword.encode("utf-8")]
-        # 2. 用双向链表存文本
-        linkedlist = LinkedList[LinkItem]()
-        for raw_vocab_id in raw_vocab_ids:
-            linkedlist.push_back(LinkItem(vocab_id=raw_vocab_id))
+        tokens = [bytes([byte_id]) for byte_id in subword.encode("utf-8")]
         
-        # 小根堆，(rank, node)
-        node = linkedlist.head
-        while node is not None:
-            rank = self.get_rank(node)
-            if rank != INF:
-                item = HeapItem(rank, node)
-                heapq.heappush(heap, item)
-            node = node.nxt
-        
-        
-        # x → a → b
-        while heap:
-            heap_item = heapq.heappop(heap)
-            a = heap_item.node
-            b = a.nxt
-                
-            if not a.value.alive or b is None or heap_item.rank != self.get_rank(heap_item.node):
-                continue
+        if len(tokens) == 1:
+            return [self.rev_vocab[tokens[0]]]
+
+        while len(tokens) >= 2:
+            pairs = list(zip(tokens[:-1], tokens[1:]))
+            pair = min(pairs, key=lambda p:self.merges_rank.get(p, INF))
             
-            pair = (self.vocab[a.value.vocab_id], self.vocab[b.value.vocab_id])
+            if pair not in self.merges_rank:
+                break
+            
             new_token = pair[0] + pair[1]
-            new_vocab_id = self.rev_vocab[new_token]
             
-            # new_token 替代 (a, b)
-            a.value = LinkItem(new_vocab_id)
-            b.alive = False
-            linkedlist.delete_node(b)
+            i=0
+            new_tokens = []
+            while i < len(tokens):
+                if i < len(tokens) - 1 and (tokens[i], tokens[i+1]) == pair:
+                    new_tokens.append(new_token)
+                    i += 2
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+            tokens = new_tokens
             
-            
-            x = a.pre
-            if x is not None:
-                if (rank := self.get_rank(x)) != INF:
-                    heapq.heappush(heap, HeapItem(rank, x))
-            
-            if (rank := self.get_rank(a)) != INF:
-                heapq.heappush(heap, HeapItem(rank, a))
-            
-        out = []
-        node = linkedlist.head
-        while node is not None:
-            out.append(node.value.vocab_id)
-            node = node.nxt
-        return out
-        
-    
-    def get_rank(self, node: LinkNode[LinkItem]) -> int:
-        if not node.value.alive or node.nxt is None:
-            return INF
-        return self.merges_rank.get((self.vocab[node.value.vocab_id], self.vocab[node.nxt.value.vocab_id]), INF)
+        return [self.rev_vocab[token] for token in tokens]
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         for chunk in iterable:
@@ -169,14 +117,19 @@ class BPE_Tokenizer:
 
 
 
-if __name__ == "__main__":#
+if __name__ == "__main__":
+    import time
+    start = time.time()
     VOCAB_PATH = r"D:\dev\github\cs336\assignment1\tests\fixtures\gpt2_vocab.json"
     MERGES_PATH = r"D:\dev\github\cs336\assignment1\tests\fixtures\gpt2_merges.txt"
     SPECIAL_TOKENS = ["<|endoftext|>"]
     tokenizer = BPE_Tokenizer.from_files(VOCAB_PATH, MERGES_PATH, SPECIAL_TOKENS)
-    test_string = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    
+    with open(r"D:\dev\github\cs336\assignment1\tests\fixtures\tinystories_sample_5M.txt", "r", encoding="utf-8") as f:
+        test_string = f.read()
+    
     # test_string = "hello world"
     encoded_ids = tokenizer.encode(test_string)
-    tokenized_string = [tokenizer.decode([x]) for x in encoded_ids]
-    # Ensure the special <|endoftext|> token is preserved
-    assert tokenized_string.count("<|endoftext|>") == 3
+    # tokenized_string = [tokenizer.decode([x]) for x in encoded_ids]
+    # # Ensure the special <|endoftext|> token is preserved
+    print(f"cost {time.time() - start} s")

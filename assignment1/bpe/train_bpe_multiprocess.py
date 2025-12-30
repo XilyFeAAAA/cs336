@@ -2,14 +2,11 @@ from collections import defaultdict
 import regex as re
 import time
 
-# local
-from utils.heap import HeapItem
-from utils.linklist import LinkedList, LinkNode
 
 import os
 import regex as re
 from typing import BinaryIO
-from multiprocessing import Pool, get_context
+from multiprocessing import get_context
 from collections import defaultdict
 
 GPT2_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""

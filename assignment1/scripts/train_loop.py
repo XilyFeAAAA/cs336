@@ -81,7 +81,6 @@ def train(args, train_data, val_data):
             gradient_clipping(model.parameters(), args.max_l2_norm)
             optim.step()
             train_losses.append(loss.item())
-
             print(f"epoch-{epoch} train loss: {train_losses[-1]:.4f}")
             
         if epoch % args.val_interval == 0:
