@@ -84,7 +84,6 @@ class Transformer(nn.Module):
         norm = self.ln_final(attn)
         proj = self.lm_head(norm)
         
-        # return Softmax(proj, dim=-1)
         return proj
         
         
